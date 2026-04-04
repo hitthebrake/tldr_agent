@@ -22,14 +22,11 @@ export const HiggsfieldActionUtil = registerActionUtil(
 
 		override sanitizeAction(action: Streaming<HiggsfieldAction>, _helpers: AgentHelpers) {
 			if (!action.complete) return action
-			if (action.mode === 'video') {
-				if (!action.sourceShapeId?.trim()) return null
-			}
 			if (!action.prompt?.trim()) return null
 			return action
 		}
 
-		/** Resolve a shape ID to the image's src URL using the editor's asset store. */
+		/** Resolve a shapeId string to a canvas src URL, or null if not an image. */
 		private getImageUrlFromShapeId(shapeId: string): string | null {
 			const { editor } = this
 			const realId = `shape:${shapeId.replace(/^shape:/, '')}` as any
@@ -41,8 +38,24 @@ export const HiggsfieldActionUtil = registerActionUtil(
 			if (!asset || asset.type !== 'image') return null
 			const src = (asset as TLImageAsset).props.src
 			if (!src) return null
-			if (src.startsWith('https://')) return src
+			if (src.startsWith('https://') || src.startsWith('http://')) return src
 			if (src.startsWith('/')) return `${window.location.origin}${src}`
+			return null
+		}
+
+		/** Find the first image shape on the canvas and return its URL, or null. */
+		private getAnyImageUrl(): string | null {
+			const { editor } = this
+			// Prefer selected image, then any visible image
+			const candidates = [
+				...editor.getSelectedShapes(),
+				...editor.getCurrentPageShapes(),
+			]
+			for (const shape of candidates) {
+				if (shape.type !== 'image') continue
+				const url = this.getImageUrlFromShapeId(shape.id.slice(6))
+				if (url) return url
+			}
 			return null
 		}
 
@@ -59,16 +72,32 @@ export const HiggsfieldActionUtil = registerActionUtil(
 				queueHiggsfieldPicture(editor, action.prompt, {
 					onError: (e) => agent.onError(e),
 				})
-			} else {
-				const imageUrl = this.getImageUrlFromShapeId(action.sourceShapeId!)
-				if (!imageUrl) {
-					agent.onError(new Error(`Could not find image URL for shape: ${action.sourceShapeId}`))
-					return
-				}
-				queueHiggsfieldVideo(editor, imageUrl, action.prompt, {
-					onError: (e) => agent.onError(e),
-				})
+				return
 			}
+
+			// video mode: resolve image URL
+			let imageUrl: string | null = null
+
+			if (action.sourceShapeId?.trim()) {
+				imageUrl = this.getImageUrlFromShapeId(action.sourceShapeId.trim())
+				if (!imageUrl) {
+					console.warn('[Higgsfield] sourceShapeId not found, falling back to any image on canvas:', action.sourceShapeId)
+				}
+			}
+
+			// Fallback: selected image or first image on canvas
+			if (!imageUrl) {
+				imageUrl = this.getAnyImageUrl()
+			}
+
+			if (!imageUrl) {
+				agent.onError(new Error('Higgsfield video: no image found on canvas to animate. Generate a picture first.'))
+				return
+			}
+
+			queueHiggsfieldVideo(editor, imageUrl, action.prompt, {
+				onError: (e) => agent.onError(e),
+			})
 		}
 	}
 )
