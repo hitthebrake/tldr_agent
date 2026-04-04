@@ -7,6 +7,8 @@ import {
 	handleHiggsfieldImage,
 	handleHiggsfieldVideo,
 } from './routes/higgsfield'
+import { realtimeCall } from './routes/realtimeCall'
+import { session } from './routes/session'
 import { stream } from './routes/stream'
 
 // make sure our durable objects are made available to cloudflare
@@ -39,6 +41,11 @@ const router = AutoRouter<IRequest, [env: Environment, ctx: ExecutionContext]>({
 
 	// AI agent streaming endpoint
 	.post('/stream', stream)
+
+	// OpenAI Realtime (voice): ephemeral key (optional / legacy clients)
+	.post('/api/session', session)
+	// OpenAI Realtime (voice): server-side SDP exchange (recommended for browsers)
+	.post('/api/realtime/call', realtimeCall)
 
 	// Higgsfield (image / video) — keys from env; never expose to the client
 	.post('/api/higgsfield/image', (request, env) => handleHiggsfieldImage(request, env))
