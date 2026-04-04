@@ -98,7 +98,7 @@ export function convertTldrawIdToSimpleId(id: TLShapeId): SimpleShapeId {
 	return id.slice(6) as SimpleShapeId
 }
 
-function convertDrawShapeToFocused(editor: Editor, shape: TLDrawShape): FocusedDrawShape {
+function convertDrawShapeToFocused(_editor: Editor, shape: TLDrawShape): FocusedDrawShape {
 	return {
 		_type: 'draw',
 		color: shape.props.color,
