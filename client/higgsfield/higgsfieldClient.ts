@@ -1,14 +1,15 @@
-import { Box, createShapesForAssets, Editor, TLImageAsset, TLImageShape, uniqueId, VecModel } from 'tldraw'
+import { createShapeId, Editor, TLImageAsset, TLImageShape, uniqueId } from 'tldraw'
 import { HiggsfieldJobHooks, runHiggsfieldJob } from './higgsfieldGenerationStore'
 
 const MAX_MEDIA_BYTES = 40 * 1024 * 1024
 
 /** Max width/height (px) for placed media; also capped relative to viewport. */
-const MAX_MEDIA_EDGE_PX = 420
-const VIEWPORT_FRACTION = 0.36
+const MAX_MEDIA_EDGE_PX = 900
+const VIEWPORT_FRACTION = 0.6
 
-const PLACE_GAP = 14
-const GRID_STEP = 40
+/** Max edge px when resizing an image before sending to video generation. */
+const VIDEO_INPUT_MAX_EDGE_PX = 1024
+
 
 function mimeToExtension(mime: string): string {
 	const m = mime.toLowerCase()
@@ -62,12 +63,28 @@ export async function higgsfieldGeneratePictureUrl(prompt: string): Promise<stri
 	return data.url
 }
 
+async function fetchImageResizedAsBase64(url: string, maxEdge: number): Promise<string> {
+	const res = await fetch(url)
+	if (!res.ok) throw new Error(`Failed to fetch source image (${res.status})`)
+	const blob = await res.blob()
+	const bitmap = await createImageBitmap(blob)
+	const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
+	const w = Math.round(bitmap.width * scale)
+	const h = Math.round(bitmap.height * scale)
+	const canvas = document.createElement('canvas')
+	canvas.width = w
+	canvas.height = h
+	canvas.getContext('2d')!.drawImage(bitmap, 0, 0, w, h)
+	return canvas.toDataURL('image/jpeg', 0.85)
+}
+
 export async function higgsfieldGenerateVideoUrl(imageUrl: string, prompt: string): Promise<string> {
+	const imageData = await fetchImageResizedAsBase64(imageUrl, VIDEO_INPUT_MAX_EDGE_PX)
 	const res = await fetch('/api/higgsfield/video', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			image_url: imageUrl.trim(),
+			image_data: imageData,
 			prompt: prompt.trim(),
 		}),
 	})
@@ -99,51 +116,14 @@ export function getSelectedImageUrl(editor: Editor): string | null {
 	return null
 }
 
-/**
- * Find top-left of a w×h box inside/near the viewport that doesn't overlap existing shapes (with gap).
- */
-export function findClearPlacement(editor: Editor, w: number, h: number): VecModel {
+/** Returns the top-left point that centers a w×h box in the current viewport. */
+export function getViewportCenterPlacement(editor: Editor, w: number, h: number): { x: number; y: number } {
 	const vb = editor.getViewportPageBounds()
-	const shapes = editor.getCurrentPageShapes()
-	const obstacles: Box[] = []
-	for (const s of shapes) {
-		const b = editor.getShapePageBounds(s.id)
-		if (b && b.isValid() && b.width > 2 && b.height > 2) {
-			obstacles.push(Box.ExpandBy(b, PLACE_GAP))
-		}
-	}
-
-	const tryBox = (x: number, y: number) => {
-		const place = new Box(x, y, w, h).expandBy(PLACE_GAP)
-		for (const ob of obstacles) {
-			if (Box.Collides(place, ob)) return false
-		}
-		return true
-	}
-
-	const pad = 20
-	// Scan from lower-left of viewport upward in rows
-	for (let row = 0; row < 50; row++) {
-		const y = vb.maxY - pad - h - row * GRID_STEP
-		for (let col = 0; col < 60; col++) {
-			const x = vb.minX + pad + col * GRID_STEP
-			if (tryBox(x, y)) return { x, y }
-		}
-	}
-	// Below viewport
-	for (let row = 0; row < 20; row++) {
-		const y = vb.maxY + pad + row * GRID_STEP
-		for (let col = 0; col < 40; col++) {
-			const x = vb.minX + pad + col * GRID_STEP
-			if (tryBox(x, y)) return { x, y }
-		}
-	}
-	// Fallback
-	return { x: vb.minX + pad, y: vb.maxY - pad - h }
+	return { x: vb.midX - w / 2, y: vb.midY - h / 2 }
 }
 
 /**
- * Upload file through the asset store, scale down display size, place in empty viewport area.
+ * Upload file through the asset store, scale to fit viewport, place at screen center, select.
  */
 export async function placeHiggsfieldFileOnCanvas(editor: Editor, file: File): Promise<void> {
 	const asset = await editor.getAssetForExternalContent({ type: 'file', file })
@@ -159,15 +139,27 @@ export async function placeHiggsfieldFileOnCanvas(editor: Editor, file: File): P
 	const w = Math.max(64, Math.round(nw * scale))
 	const h = Math.max(64, Math.round(nh * scale))
 
-	const scaled = { ...asset, props: { ...asset.props, w, h } }
-	editor.run(() => editor.updateAssets([scaled]), { history: 'record', ignoreShapeLock: true })
+	// Place exactly at the center of what's currently on screen
+	const x = vb.midX - w / 2
+	const y = vb.midY - h / 2
 
-	const point = findClearPlacement(editor, w, h)
-
-	// Save camera so placement never zooms/pans any user's view
-	const savedCamera = editor.getCamera()
-	await createShapesForAssets(editor, [scaled], point)
-	editor.setCamera(savedCamera, { animation: { duration: 0 } })
+	const shapeId = createShapeId()
+	editor.run(
+		() => {
+			editor.createAssets([{ ...asset, props: { ...asset.props, w, h } }])
+			editor.createShapes([
+				{
+					id: shapeId,
+					type: asset.type,
+					x,
+					y,
+					props: { assetId: asset.id, w, h },
+				},
+			])
+			editor.select(shapeId)
+		},
+		{ history: 'record', ignoreShapeLock: true }
+	)
 }
 
 export function queueHiggsfieldPicture(
