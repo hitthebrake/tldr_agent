@@ -1,29 +1,49 @@
-name = "agent-template"
+
+name = "multiplayer-template"
 main = "worker/worker.ts"
-compatibility_date = "2024-12-30"
-assets = { not_found_handling = "single-page-application" }
+compatibility_date = "2025-05-08"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
 preview_urls = true
+
+# Higgsfield AI (image/video from bottom toolbar):
+# Local dev: create `.dev.vars` in the project root with:
+#   HIGGSFIELD_API_KEY=<key id>
+#   HIGGSFIELD_API_SECRET=<secret>
+# Production: `wrangler secret put HIGGSFIELD_API_KEY` and `wrangler secret put HIGGSFIELD_API_SECRET`
+# Auth format: Authorization: Key <id>:<secret> (see https://docs.higgsfield.ai/how-to/introduction)
+
+[[routes]]
+pattern = "multiplayer.templates.tldraw.dev"
+custom_domain = true
 
 [observability]
 enabled = true
 
-[[routes]]
-pattern = "agent.templates.tldraw.dev"
-custom_domain = true
+[assets]
+not_found_handling = "single-page-application"
+directory = "./dist/client"
 
-# Set up the durable object used for each tldraw room
+# Set up the durable objects
 [durable_objects]
 bindings = [
+    { name = "TLDRAW_DURABLE_OBJECT", class_name = "TldrawDurableObject" },
     { name = "AGENT_DURABLE_OBJECT", class_name = "AgentDurableObject" },
 ]
 
 # Durable objects require migrations to create/modify/delete them
+# Using new_sqlite_classes for SQLite-backed storage
 [[migrations]]
 tag = "v1"
-new_classes = ["TldrawAiDurableObject"]
+new_sqlite_classes = ["TldrawDurableObject"]
 
 [[migrations]]
 tag = "v2"
-renamed_classes = [
-    { from = "TldrawAiDurableObject", to = "AgentDurableObject" },
-]
+new_classes = ["AgentDurableObject"]
+
+# We store asset uploads (images, videos) in an R2 bucket.
+# Room data is stored in Durable Object SQLite storage.
+[[r2_buckets]]
+binding = 'TLDRAW_BUCKET'
+bucket_name = 'multiplayer-template'
+preview_bucket_name = 'multiplayer-template-preview'

@@ -3,9 +3,9 @@ import { PersistedAgentState, TldrawAgent } from '../TldrawAgent'
 import { BaseAgentAppManager } from './BaseAgentAppManager'
 
 /**
- * The key prefix used for localStorage persistence.
+ * The fixed agent ID used in multiplayer so all users share the same agent state.
  */
-const STORAGE_PREFIX = 'tldraw-agent-app'
+const SHARED_AGENT_ID = 'agent'
 
 /**
  * The persisted state for the entire app.
@@ -18,9 +18,10 @@ export interface PersistedAppState {
 /**
  * Manager for app-level state persistence.
  *
- * Coordinates loading and saving agent state to localStorage.
- * Calls agent-level serializeState() and loadState() methods
- * to handle the actual state serialization/deserialization.
+ * In multiplayer mode, state is stored in the tldraw document meta so it is
+ * automatically synced to all connected users via the existing @tldraw/sync
+ * infrastructure. Remote changes are detected via editor.store.listen() and
+ * applied locally with the isLoadingState guard to prevent echo saves.
  */
 export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	/**
@@ -37,6 +38,11 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	 * Cleanup functions for per-agent state watchers, keyed by agent ID.
 	 */
 	private agentWatcherCleanupFns = new Map<string, () => void>()
+
+	/**
+	 * Cleanup for the remote store change listener.
+	 */
+	private storeListenerCleanup: (() => void) | null = null
 
 	/**
 	 * Check if state is currently being loaded.
@@ -63,7 +69,7 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	}
 
 	/**
-	 * Load app state from localStorage.
+	 * Load app state from the tldraw document meta (shared across all users).
 	 * Call this after the app is initialized.
 	 * Creates agents for all persisted agent IDs that don't already exist.
 	 */
@@ -71,8 +77,12 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 		this.isLoadingState = true
 
 		try {
-			const appState = this.loadValue<PersistedAppState>('state')
+			const meta = this.app.editor.getDocumentSettings().meta
+			const appState = meta?.agentState as PersistedAppState | undefined
+
 			if (!appState) {
+				// No shared state yet — ensure a default agent with a fixed ID exists
+				this.app.agents.createAgent(SHARED_AGENT_ID)
 				this.isLoadingState = false
 				return
 			}
@@ -101,6 +111,8 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	 * Start auto-saving app state changes.
 	 * Call this after loadState() to avoid saving during load.
 	 * Reactively watches the agents list and all agent state.
+	 * Also subscribes to remote store changes so this user's UI updates
+	 * when another user sends a message or the agent responds.
 	 */
 	startAutoSave() {
 		// Watch for changes to the agents list and set up per-agent watchers
@@ -132,6 +144,17 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 				this.saveState()
 			}
 		})
+
+		// Subscribe to remote store changes: when another user saves agent state,
+		// the document meta changes with source='remote' and we reload it here.
+		this.storeListenerCleanup = this.app.editor.store.listen(
+			({ changes, source }) => {
+				if (source !== 'remote') return
+				if ('document:document' in changes.updated) {
+					this.loadState()
+				}
+			}
+		)
 	}
 
 	/**
@@ -155,7 +178,9 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	}
 
 	/**
-	 * Save the current app state to localStorage.
+	 * Save the current app state to the tldraw document meta.
+	 * Because the document is part of the synced store, this automatically
+	 * propagates to all connected users.
 	 */
 	private saveState() {
 		const agents = this.app.agents.getAgents()
@@ -164,7 +189,13 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 			return
 		}
 		const appState = this.serializeState()
-		this.saveValue('state', appState)
+		const editor = this.app.editor
+		editor.updateDocumentSettings({
+			meta: {
+				...editor.getDocumentSettings().meta,
+				agentState: JSON.parse(JSON.stringify(appState)),
+			},
+		})
 	}
 
 	/**
@@ -179,6 +210,10 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 			cleanup()
 		}
 		this.agentWatcherCleanupFns.clear()
+		if (this.storeListenerCleanup) {
+			this.storeListenerCleanup()
+			this.storeListenerCleanup = null
+		}
 	}
 
 	/**
@@ -195,42 +230,5 @@ export class AgentAppPersistenceManager extends BaseAgentAppManager {
 	override dispose() {
 		this.stopAutoSave()
 		super.dispose()
-	}
-
-	// --- Helper methods ---
-
-	/**
-	 * Load a value from localStorage.
-	 */
-	private loadValue<T>(key: string): T | null {
-		const localStorage = globalThis.localStorage
-		if (!localStorage) return null
-
-		try {
-			const fullKey = `${STORAGE_PREFIX}:${key}`
-			const stored = localStorage.getItem(fullKey)
-			if (stored) {
-				return JSON.parse(stored) as T
-			}
-		} catch {
-			console.warn(`Couldn't load ${key} from localStorage`)
-		}
-
-		return null
-	}
-
-	/**
-	 * Save a value to localStorage.
-	 */
-	private saveValue<T>(key: string, value: T): void {
-		const localStorage = globalThis.localStorage
-		if (!localStorage) return
-
-		try {
-			const fullKey = `${STORAGE_PREFIX}:${key}`
-			localStorage.setItem(fullKey, JSON.stringify(value))
-		} catch {
-			console.warn(`Couldn't save ${key} to localStorage`)
-		}
 	}
 }
