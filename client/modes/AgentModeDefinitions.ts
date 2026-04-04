@@ -11,6 +11,7 @@ import { CountShapesActionUtil } from '../actions/CountShapesActionUtil'
 import { CreateActionUtil } from '../actions/CreateActionUtil'
 import { DeleteActionUtil } from '../actions/DeleteActionUtil'
 import { DistributeActionUtil } from '../actions/DistributeActionUtil'
+import { HiggsfieldActionUtil } from '../actions/HiggsfieldActionUtil'
 import { LabelActionUtil } from '../actions/LabelActionUtil'
 import { MessageActionUtil } from '../actions/MessageActionUtil'
 import { MoveActionUtil } from '../actions/MoveActionUtil'
@@ -167,6 +168,7 @@ export const AGENT_MODE_DEFINITIONS = [
 			// External APIs
 			CountryInfoActionUtil.type,
 			CountShapesActionUtil.type,
+			HiggsfieldActionUtil.type,
 
 			// Internal (required)
 			UnknownActionUtil.type,

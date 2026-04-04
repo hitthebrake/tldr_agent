@@ -3,28 +3,33 @@ import { useToasts } from 'tldraw'
 import { TldrawAgent } from '../agent/TldrawAgent'
 import { useAgent } from '../agent/TldrawAgentAppProvider'
 
-const REALTIME_MODEL = 'gpt-4o-realtime-preview'
-
-/** Must match `worker/routes/session.ts` and include `?model=` like the OpenAI realtime console sample. */
-function realtimeCallsUrl() {
-	const u = new URL('https://api.openai.com/v1/realtime/calls')
-	u.searchParams.set('model', REALTIME_MODEL)
-	return u.toString()
-}
+/** Worker proxies SDP to OpenAI (see `worker/routes/realtimeCall.ts`). */
+const REALTIME_CALL_URL = '/api/realtime/call'
 
 function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs: number): Promise<void> {
 	if (pc.iceGatheringState === 'complete') return Promise.resolve()
 	return new Promise((resolve) => {
-		const done = () => {
+		let settled = false
+		const cleanup = () => {
 			clearTimeout(timeout)
-			pc.removeEventListener('icegatheringstatechange', onState)
+			pc.removeEventListener('icegatheringstatechange', onGatheringState)
+			pc.removeEventListener('icecandidate', onIceCandidate)
+		}
+		const finish = () => {
+			if (settled) return
+			settled = true
+			cleanup()
 			resolve()
 		}
-		const onState = () => {
-			if (pc.iceGatheringState === 'complete') done()
+		const timeout = setTimeout(finish, timeoutMs)
+		const onGatheringState = () => {
+			if (pc.iceGatheringState === 'complete') finish()
 		}
-		const timeout = setTimeout(done, timeoutMs)
-		pc.addEventListener('icegatheringstatechange', onState)
+		const onIceCandidate = (ev: RTCPeerConnectionIceEvent) => {
+			if (ev.candidate === null) finish()
+		}
+		pc.addEventListener('icegatheringstatechange', onGatheringState)
+		pc.addEventListener('icecandidate', onIceCandidate)
 	})
 }
 
@@ -43,14 +48,6 @@ function waitForDataChannelOpen(dc: RTCDataChannel, timeoutMs: number): Promise<
 	})
 }
 
-type RealtimeSessionResponse = {
-	/** GA client_secrets response */
-	value?: string
-	/** Legacy beta /sessions shape */
-	client_secret?: { value: string; expires_at?: number }
-	error?: { message?: string }
-}
-
 function sendFunctionCallOutput(dc: RTCDataChannel, callId: string, output: string) {
 	if (dc.readyState !== 'open') return
 	dc.send(
@@ -66,40 +63,77 @@ function sendFunctionCallOutput(dc: RTCDataChannel, callId: string, output: stri
 	dc.send(JSON.stringify({ type: 'response.create' }))
 }
 
-function parseDelegatePromptCalls(event: {
-	type?: string
-	response?: { output?: unknown[] }
-}): { callId: string; prompt: string }[] {
-	if (event.type !== 'response.done' || !event.response?.output) return []
-	const results: { callId: string; prompt: string }[] = []
-	for (const item of event.response.output) {
-		if (!item || typeof item !== 'object') continue
-		const o = item as Record<string, unknown>
-		if (o.type !== 'function_call' || o.name !== 'delegate_prompt') continue
-		const callId = typeof o.call_id === 'string' ? o.call_id : ''
-		if (!callId) continue
-		let prompt = ''
-		try {
-			const raw = o.arguments
-			const args =
-				typeof raw === 'string' ? (JSON.parse(raw) as { prompt?: string }) : (raw as { prompt?: string })
-			if (typeof args?.prompt === 'string') prompt = args.prompt
-		} catch {
-			continue
-		}
-		if (prompt) results.push({ callId, prompt })
+function parseArgumentsPrompt(raw: unknown): string {
+	if (raw == null) return ''
+	try {
+		const args =
+			typeof raw === 'string' ? (JSON.parse(raw) as { prompt?: string }) : (raw as { prompt?: string })
+		return typeof args?.prompt === 'string' ? args.prompt : ''
+	} catch {
+		return ''
 	}
-	return results
+}
+
+function delegateFromFunctionCallItem(item: Record<string, unknown>): { callId: string; prompt: string } | null {
+	if (item.type !== 'function_call' || item.name !== 'delegate_prompt') return null
+	const callId = typeof item.call_id === 'string' ? item.call_id : ''
+	if (!callId) return null
+	const prompt = parseArgumentsPrompt(item.arguments)
+	return prompt ? { callId, prompt } : null
+}
+
+/**
+ * Realtime emits tool calls on several events; audio sessions often finalize on
+ * `response.function_call_arguments.done` or `response.output_item.done` before/instead of `response.done`.
+ */
+function extractDelegatePromptCalls(event: Record<string, unknown>): { callId: string; prompt: string }[] {
+	const out: { callId: string; prompt: string }[] = []
+	const push = (x: { callId: string; prompt: string } | null) => {
+		if (x) out.push(x)
+	}
+
+	const t = event.type
+	if (t === 'response.function_call_arguments.done') {
+		if (event.name === 'delegate_prompt') {
+			const callId = typeof event.call_id === 'string' ? event.call_id : ''
+			const prompt = parseArgumentsPrompt(event.arguments)
+			if (callId && prompt) out.push({ callId, prompt })
+		}
+		return out
+	}
+
+	if (t === 'response.output_item.done' && event.item && typeof event.item === 'object') {
+		push(delegateFromFunctionCallItem(event.item as Record<string, unknown>))
+		return out
+	}
+
+	if (t === 'response.done' && event.response && typeof event.response === 'object') {
+		const resp = event.response as Record<string, unknown>
+		const items = resp.output
+		if (Array.isArray(items)) {
+			for (const item of items) {
+				if (item && typeof item === 'object') {
+					push(delegateFromFunctionCallItem(item as Record<string, unknown>))
+				}
+			}
+		}
+	}
+
+	return out
 }
 
 async function runDelegatePrompts(
 	agent: TldrawAgent,
 	calls: { callId: string; prompt: string }[],
-	dc: RTCDataChannel
+	dc: RTCDataChannel,
+	processedCallIds: Set<string>
 ) {
 	for (const { callId, prompt } of calls) {
+		if (processedCallIds.has(callId)) continue
+		processedCallIds.add(callId)
 		try {
-			await agent.prompt(prompt)
+			// nested: true avoids "already prompting" when chat/stream is active; still awaits completion.
+			await agent.prompt(prompt, { nested: true })
 			sendFunctionCallOutput(dc, callId, JSON.stringify({ ok: true }))
 		} catch (e) {
 			const message = e instanceof Error ? e.message : String(e)
@@ -123,8 +157,10 @@ export function VoiceCall() {
 	const streamRef = useRef<MediaStream | null>(null)
 	const dcRef = useRef<RTCDataChannel | null>(null)
 	const remoteAudioRef = useRef<HTMLAudioElement | null>(null)
+	const processedVoiceToolCallsRef = useRef<Set<string>>(new Set())
 
 	const teardown = useCallback(() => {
+		processedVoiceToolCallsRef.current.clear()
 		dcRef.current = null
 		if (pcRef.current) {
 			pcRef.current.close()
@@ -146,28 +182,6 @@ export function VoiceCall() {
 	const start = useCallback(async () => {
 		setConnecting(true)
 		try {
-			const sessionRes = await fetch('/api/session', { method: 'POST' })
-			let sessionJson: RealtimeSessionResponse
-			try {
-				sessionJson = (await sessionRes.json()) as RealtimeSessionResponse
-			} catch {
-				throw new Error(`Session failed (${sessionRes.status})`)
-			}
-			if (!sessionRes.ok) {
-				const msg =
-					sessionJson.error?.message ??
-					(typeof sessionJson === 'object' && sessionJson && 'message' in sessionJson
-						? String((sessionJson as { message?: string }).message)
-						: sessionRes.statusText)
-				throw new Error(msg || `Session failed (${sessionRes.status})`)
-			}
-			const ephemeral =
-				sessionJson.value ??
-				sessionJson.client_secret?.value ??
-				(sessionJson as { session?: { client_secret?: { value?: string } } }).session?.client_secret
-					?.value
-			if (!ephemeral) throw new Error('No ephemeral client secret in session response')
-
 			const pc = new RTCPeerConnection({
 				iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 			})
@@ -207,10 +221,18 @@ export function VoiceCall() {
 
 			dc.addEventListener('message', (e) => {
 				try {
-					const data = JSON.parse(String(e.data)) as { type?: string; response?: { output?: unknown[] } }
-					const calls = parseDelegatePromptCalls(data)
+					const data = JSON.parse(String(e.data)) as Record<string, unknown> & {
+						type?: string
+						error?: { message?: string; code?: string }
+					}
+					if (data.type === 'error') {
+						const msg = data.error?.message ?? 'Realtime error'
+						toasts.addToast({ title: 'Voice', description: msg, severity: 'error' })
+						return
+					}
+					const calls = extractDelegatePromptCalls(data)
 					if (calls.length === 0) return
-					void runDelegatePrompts(agentRef.current, calls, dc)
+					void runDelegatePrompts(agentRef.current, calls, dc, processedVoiceToolCallsRef.current)
 				} catch {
 					// ignore malformed events
 				}
@@ -223,24 +245,34 @@ export function VoiceCall() {
 			const localSdp = pc.localDescription?.sdp
 			if (!localSdp?.trim()) throw new Error('Missing local SDP after ICE gathering')
 
-			const sdpRes = await fetch(realtimeCallsUrl(), {
+			const sdpRes = await fetch(REALTIME_CALL_URL, {
 				method: 'POST',
 				body: localSdp,
 				headers: {
-					Authorization: `Bearer ${ephemeral}`,
 					'Content-Type': 'application/sdp',
 				},
 			})
 
 			if (!sdpRes.ok) {
 				const errText = await sdpRes.text()
-				throw new Error(errText || `WebRTC handshake failed (${sdpRes.status})`)
+				let detail = errText
+				try {
+					const j = JSON.parse(errText) as { error?: { message?: string }; message?: string }
+					detail = j.error?.message ?? j.message ?? errText
+				} catch {
+					// keep errText
+				}
+				throw new Error(detail || `WebRTC handshake failed (${sdpRes.status})`)
 			}
 
 			const answerSdp = await sdpRes.text()
 			await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
 
 			await waitForDataChannelOpen(dc, 20_000)
+			// Prompt an initial short reply so the user hears that audio + the session are live.
+			if (dc.readyState === 'open') {
+				dc.send(JSON.stringify({ type: 'response.create' }))
+			}
 			setActive(true)
 		} catch (e) {
 			teardown()
