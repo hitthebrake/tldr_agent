@@ -48,7 +48,8 @@ export const AGENT_MODEL_DEFINITIONS = {
 	},
 } as const
 
-export const DEFAULT_MODEL_NAME: AgentModelName = 'claude-sonnet-4-5'
+/** Default uses OpenAI so local dev works with only `OPENAI_API_KEY` in `.dev.vars` (Workers have no `process.env` for the AI SDK). */
+export const DEFAULT_MODEL_NAME: AgentModelName = 'gpt-5.2-2025-12-11'
 
 /**
  * Check if a string is a valid AgentModelName.

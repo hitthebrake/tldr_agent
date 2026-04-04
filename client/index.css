@@ -112,6 +112,34 @@ body {
 	.tldraw-agent-container {
 		grid-template-columns: 1fr;
 		grid-template-rows: 1fr auto;
+		transition: grid-template-rows 0.28s ease;
+	}
+
+	.tldraw-agent-container--chat-collapsed {
+		grid-template-columns: 1fr;
+		grid-template-rows: 1fr 0fr;
+	}
+
+	.chat-panel-slide-toggle {
+		top: auto;
+		bottom: calc(50vh + 10px);
+		right: 12px;
+		transform: none;
+		width: auto;
+		min-width: 52px;
+		height: 48px;
+		padding: 0 18px;
+		border: 1px solid hsl(217, 91%, 36%);
+		border-radius: 24px;
+		font-size: 20px;
+		font-weight: 700;
+		box-shadow:
+			0 4px 16px rgba(15, 23, 42, 0.25),
+			0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+	}
+
+	.tldraw-agent-container--chat-collapsed .chat-panel-slide-toggle {
+		bottom: max(12px, env(safe-area-inset-bottom, 0px));
 	}
 }
 
@@ -175,6 +203,77 @@ body {
 	display: flex;
 	justify-content: flex-end;
 	flex-shrink: 0;
+}
+
+.voice-toggle-button {
+	width: 32px;
+	height: 32px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	appearance: none;
+	border: 0;
+	border-radius: 4px;
+	cursor: pointer;
+	background: none;
+	margin: 2px;
+	color: var(--tl-color-text);
+}
+
+/* Inline with send: same row height as circular submit */
+.chat-actions-right .voice-toggle-button {
+	width: 22px;
+	height: 22px;
+	margin: 0;
+	border-radius: 50%;
+	background: var(--tl-color-muted-2);
+}
+
+.chat-actions-right .voice-toggle-button:hover:not(:disabled) {
+	background: var(--tl-color-muted-0);
+}
+
+.chat-actions-right .voice-toggle-button--on {
+	background: hsla(142, 70%, 45%, 0.2);
+}
+
+.chat-actions-right .voice-toggle-button__icon {
+	width: 12px;
+	height: 12px;
+}
+
+.chat-actions-right .voice-toggle-button__spinner {
+	width: 11px;
+	height: 11px;
+	border-width: 2px;
+}
+
+.voice-toggle-button:hover:not(:disabled) {
+	background-color: var(--tl-color-muted-2);
+}
+
+.voice-toggle-button:disabled {
+	opacity: 0.6;
+	cursor: wait;
+}
+
+.voice-toggle-button--on {
+	color: hsl(142, 70%, 45%);
+}
+
+.voice-toggle-button__spinner {
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--tl-color-muted-2);
+	border-top-color: var(--tl-color-text);
+	border-radius: 50%;
+	animation: voice-spin 0.7s linear infinite;
+}
+
+@keyframes voice-spin {
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 .new-chat-button {
@@ -289,7 +388,7 @@ body {
 .chat-input-submit {
 	width: 16px;
 	height: 16px;
-	align-self: flex-end;
+	flex-shrink: 0;
 	background: var(--tl-color-primary);
 	box-shadow: var(--tl-shadow-1);
 	color: var(--tl-color-panel-contrast);
@@ -320,11 +419,22 @@ body {
 	gap: 8px;
 	width: 100%;
 	justify-content: space-between;
+	align-items: center;
 }
 
 .chat-actions-left {
 	display: flex;
 	gap: 0px;
+	min-width: 0;
+}
+
+.chat-actions-right {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 1000000;
 }
 
 .chat-icon {
