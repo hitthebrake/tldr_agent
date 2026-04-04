@@ -8,25 +8,40 @@ const REALTIME_CALL_URL = '/api/realtime/call'
 
 function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs: number): Promise<void> {
 	if (pc.iceGatheringState === 'complete') return Promise.resolve()
-	return new Promise((resolve) => {
+	return new Promise((resolve, reject) => {
 		let settled = false
 		const cleanup = () => {
 			clearTimeout(timeout)
 			pc.removeEventListener('icegatheringstatechange', onGatheringState)
 			pc.removeEventListener('icecandidate', onIceCandidate)
 		}
-		const finish = () => {
+		const finishOk = () => {
 			if (settled) return
 			settled = true
 			cleanup()
 			resolve()
 		}
-		const timeout = setTimeout(finish, timeoutMs)
+		const onTimeout = () => {
+			if (settled) return
+			settled = true
+			cleanup()
+			const sdp = pc.localDescription?.sdp ?? ''
+			if (pc.iceGatheringState === 'complete' || /\na=candidate:/i.test(sdp)) {
+				resolve()
+				return
+			}
+			reject(
+				new Error(
+					'Voice setup timed out before network candidates were ready (try another network or disable VPN).'
+				)
+			)
+		}
+		const timeout = setTimeout(onTimeout, timeoutMs)
 		const onGatheringState = () => {
-			if (pc.iceGatheringState === 'complete') finish()
+			if (pc.iceGatheringState === 'complete') finishOk()
 		}
 		const onIceCandidate = (ev: RTCPeerConnectionIceEvent) => {
-			if (ev.candidate === null) finish()
+			if (ev.candidate === null) finishOk()
 		}
 		pc.addEventListener('icegatheringstatechange', onGatheringState)
 		pc.addEventListener('icecandidate', onIceCandidate)
@@ -184,6 +199,7 @@ export function VoiceCall() {
 		try {
 			const pc = new RTCPeerConnection({
 				iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+				iceCandidatePoolSize: 10,
 			})
 			pcRef.current = pc
 
@@ -204,13 +220,25 @@ export function VoiceCall() {
 				}
 			}
 
-			const ms = await navigator.mediaDevices.getUserMedia({
-				audio: {
-					echoCancellation: true,
-					noiseSuppression: true,
-					autoGainControl: true,
-				},
-			})
+			let ms: MediaStream
+			try {
+				ms = await navigator.mediaDevices.getUserMedia({
+					audio: {
+						echoCancellation: true,
+						noiseSuppression: true,
+						autoGainControl: true,
+					},
+				})
+			} catch (e) {
+				const name = e instanceof DOMException ? e.name : ''
+				if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+					throw new Error('Microphone permission denied — allow mic access for this site.')
+				}
+				if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+					throw new Error('No microphone found.')
+				}
+				throw e
+			}
 			streamRef.current = ms
 			const [track] = ms.getAudioTracks()
 			if (!track) throw new Error('No microphone audio track')
@@ -240,7 +268,7 @@ export function VoiceCall() {
 
 			const offer = await pc.createOffer()
 			await pc.setLocalDescription(offer)
-			await waitForIceGatheringComplete(pc, 10_000)
+			await waitForIceGatheringComplete(pc, 15_000)
 
 			const localSdp = pc.localDescription?.sdp
 			if (!localSdp?.trim()) throw new Error('Missing local SDP after ICE gathering')

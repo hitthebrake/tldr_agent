@@ -100,86 +100,12 @@ body {
 	overflow: hidden;
 }
 .tldraw-agent-container {
-<<<<<<< HEAD
-	--chat-panel-width: 350px;
-	position: fixed;
-	inset: 0;
-	display: grid;
-	grid-template-columns: 1fr var(--chat-panel-width);
-	transition: grid-template-columns 0.28s ease;
-}
-
-.tldraw-agent-container--chat-collapsed {
-	grid-template-columns: 1fr 0;
-}
-
-.chat-column {
-	min-width: 0;
-	overflow: hidden;
-	height: 100%;
-	display: flex;
-	flex-direction: column;
-}
-
-.chat-panel-slide-toggle {
-	position: fixed;
-	z-index: 100020;
-	top: 50%;
-	right: var(--chat-panel-width);
-	transform: translateY(-50%);
-	width: 30px;
-	height: 72px;
-	padding: 0;
-	margin: 0;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 22px;
-	line-height: 1;
-	font-weight: 700;
-	letter-spacing: -0.02em;
-	color: #fff;
-	background: linear-gradient(180deg, hsl(217, 91%, 52%), hsl(217, 91%, 44%));
-	border: 1px solid hsl(217, 91%, 36%);
-	border-right: none;
-	border-radius: 10px 0 0 10px;
-	cursor: pointer;
-	box-shadow:
-		0 4px 14px rgba(15, 23, 42, 0.22),
-		0 0 0 1px rgba(255, 255, 255, 0.12) inset;
-	transition:
-		right 0.28s ease,
-		filter 0.15s ease,
-		box-shadow 0.15s ease;
-}
-
-.tldraw-agent-container--chat-collapsed .chat-panel-slide-toggle {
-	right: 0;
-	border-right: 1px solid hsl(217, 91%, 36%);
-}
-
-.chat-panel-slide-toggle:hover {
-	filter: brightness(1.08);
-	box-shadow:
-		0 6px 20px rgba(15, 23, 42, 0.28),
-		0 0 0 1px rgba(255, 255, 255, 0.18) inset;
-}
-
-.chat-panel-slide-toggle:active {
-	filter: brightness(0.96);
-}
-
-.chat-panel-slide-toggle:focus-visible {
-	outline: 3px solid hsl(217, 91%, 65%);
-	outline-offset: 3px;
-=======
 	position: absolute;
 	inset: 0;
 	display: grid;
 	grid-template-columns: 1fr 350px;
 	min-height: 0;
 	overflow: hidden;
->>>>>>> main
 }
 
 @media (max-width: 768px) {
@@ -276,12 +202,7 @@ body {
 .chat-header {
 	display: flex;
 	justify-content: flex-end;
-<<<<<<< HEAD
-	align-items: center;
-	gap: 2px;
-=======
 	flex-shrink: 0;
->>>>>>> main
 }
 
 .voice-toggle-button {
@@ -512,6 +433,8 @@ body {
 	align-items: center;
 	gap: 6px;
 	flex-shrink: 0;
+	position: relative;
+	z-index: 1000000;
 }
 
 .chat-icon {

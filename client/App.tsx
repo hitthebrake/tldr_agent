@@ -89,7 +89,7 @@ function App() {
 			HelperButtons: () =>
 				app && (
 					<TldrawAgentAppContextProvider app={app}>
-						<CustomHelperButtons />
+						<CustomHelperButtons app={app} />
 					</TldrawAgentAppContextProvider>
 				),
 			Overlays: () => (
