@@ -33,6 +33,9 @@ export type HiggsfieldJobHooks = {
 	onError?: (error: unknown) => void
 }
 
+/** Max ms a single job is allowed to run before being force-reset. */
+const JOB_TIMEOUT_MS = 6 * 60 * 1000
+
 /**
  * Shows the global Higgsfield loading UI and runs async work without blocking the caller.
  * Supports overlapping jobs (e.g. agent + toolbar) via a refcount.
@@ -44,18 +47,27 @@ export function runHiggsfieldJob(
 ): void {
 	activeJobCount++
 	setGenerationState({ active: true, label })
+
+	const finish = () => {
+		activeJobCount = Math.max(0, activeJobCount - 1)
+		if (activeJobCount === 0) setGenerationState({ active: false, label: '' })
+	}
+
+	const safetyTimer = setTimeout(() => {
+		console.warn('[Higgsfield] job timed out, resetting loading state')
+		finish()
+	}, JOB_TIMEOUT_MS)
+
 	void work()
 		.then(() => {
 			hooks?.onSuccess?.()
 		})
 		.catch((e) => {
-			hooks?.onError?.(e)
+			try { hooks?.onError?.(e) } catch {}
 			console.error('[Higgsfield]', e)
 		})
 		.finally(() => {
-			activeJobCount = Math.max(0, activeJobCount - 1)
-			if (activeJobCount === 0) {
-				setGenerationState({ active: false, label: '' })
-			}
+			clearTimeout(safetyTimer)
+			finish()
 		})
 }

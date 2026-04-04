@@ -379,13 +379,13 @@ export const HiggsfieldAction = z
 		intent: z.string(),
 		mode: z.enum(['picture', 'video']),
 		prompt: z.string(),
-		/** Required when mode is video: public HTTPS URL of the source image to animate. */
-		sourceImageUrl: z.string().optional(),
+		/** Required when mode is video: the shapeId of the image shape on the canvas to animate. */
+		sourceShapeId: z.string().optional(),
 	})
 	.meta({
 		title: 'Higgsfield',
 		description:
-			'Higgsfield supports two modes. "picture": generate an image from a text prompt. "video": animate an image that is already on the canvas into a short video — set sourceImageUrl to the public https src of the image shape you want to animate, and set prompt to a short motion description (e.g. "gentle camera pan" or "animate"). Generation runs in the background with a loading indicator; the result is placed on the canvas automatically.',
+			'Higgsfield supports two modes. "picture": generate an image from a text prompt. "video": animate an image that is already on the canvas into a short video — set sourceShapeId to the shapeId of the image shape you want to animate (use the shapeId exactly as it appears in the canvas shape list), and set prompt to a short motion description (e.g. "gentle camera pan" or "animate"). Generation runs in the background with a loading indicator; the result is placed on the canvas automatically.',
 	})
 
 export type HiggsfieldAction = z.infer<typeof HiggsfieldAction>

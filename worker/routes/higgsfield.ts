@@ -3,7 +3,7 @@ import { Environment } from '../environment'
 const PLATFORM = 'https://platform.higgsfield.ai'
 
 const DEFAULT_IMAGE_MODEL = 'higgsfield-ai/soul/standard'
-const DEFAULT_VIDEO_MODEL = 'higgsfield-ai/dop/preview'
+const DEFAULT_VIDEO_MODEL = 'kling-video/v2.1/pro/image-to-video'
 
 function getAuthHeader(env: Environment): string | null {
 	const key = env.HIGGSFIELD_API_KEY
@@ -120,6 +120,7 @@ export async function handleHiggsfieldVideo(request: Request, env: Environment):
 	let body: {
 		prompt?: string
 		image_url?: string
+		image_data?: string
 		duration?: number
 		model_id?: string
 	}
@@ -129,10 +130,19 @@ export async function handleHiggsfieldVideo(request: Request, env: Environment):
 		return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
 	}
 	const prompt = body.prompt?.trim() || 'animate'
-	const imageUrl = body.image_url?.trim()
-	if (!imageUrl) {
-		return Response.json({ error: 'Missing image_url' }, { status: 400 })
+
+	let imageBase64: string
+
+	if (body.image_data) {
+		// Strip the data URI prefix — Higgsfield expects raw base64, not a data URI or URL
+		const commaIdx = body.image_data.indexOf(',')
+		imageBase64 = commaIdx !== -1 ? body.image_data.slice(commaIdx + 1) : body.image_data
+	} else if (body.image_url) {
+		imageBase64 = body.image_url.trim()
+	} else {
+		return Response.json({ error: 'Missing image_url or image_data' }, { status: 400 })
 	}
+
 	const modelId = (body.model_id || DEFAULT_VIDEO_MODEL).replace(/^\//, '')
 	const url = `${PLATFORM}/${modelId}`
 	const res = await fetch(url, {
@@ -143,7 +153,7 @@ export async function handleHiggsfieldVideo(request: Request, env: Environment):
 			Accept: 'application/json',
 		},
 		body: JSON.stringify({
-			image_url: imageUrl,
+			image_url: imageBase64,
 			prompt,
 			duration: body.duration ?? 5,
 		}),

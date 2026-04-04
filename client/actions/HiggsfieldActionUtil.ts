@@ -1,3 +1,4 @@
+import { TLImageAsset, TLImageShape } from 'tldraw'
 import { HiggsfieldAction } from '../../shared/schema/AgentActionSchemas'
 import { Streaming } from '../../shared/types/Streaming'
 import { queueHiggsfieldPicture, queueHiggsfieldVideo } from '../higgsfield/higgsfieldClient'
@@ -22,11 +23,27 @@ export const HiggsfieldActionUtil = registerActionUtil(
 		override sanitizeAction(action: Streaming<HiggsfieldAction>, _helpers: AgentHelpers) {
 			if (!action.complete) return action
 			if (action.mode === 'video') {
-				const url = action.sourceImageUrl?.trim()
-				if (!url) return null
+				if (!action.sourceShapeId?.trim()) return null
 			}
 			if (!action.prompt?.trim()) return null
 			return action
+		}
+
+		/** Resolve a shape ID to the image's src URL using the editor's asset store. */
+		private getImageUrlFromShapeId(shapeId: string): string | null {
+			const { editor } = this
+			const realId = `shape:${shapeId.replace(/^shape:/, '')}` as any
+			const shape = editor.getShape(realId)
+			if (!shape || shape.type !== 'image') return null
+			const assetId = (shape as TLImageShape).props.assetId
+			if (!assetId) return null
+			const asset = editor.getAsset(assetId)
+			if (!asset || asset.type !== 'image') return null
+			const src = (asset as TLImageAsset).props.src
+			if (!src) return null
+			if (src.startsWith('https://')) return src
+			if (src.startsWith('/')) return `${window.location.origin}${src}`
+			return null
 		}
 
 		/**
@@ -43,7 +60,12 @@ export const HiggsfieldActionUtil = registerActionUtil(
 					onError: (e) => agent.onError(e),
 				})
 			} else {
-				queueHiggsfieldVideo(editor, action.sourceImageUrl!.trim(), action.prompt, {
+				const imageUrl = this.getImageUrlFromShapeId(action.sourceShapeId!)
+				if (!imageUrl) {
+					agent.onError(new Error(`Could not find image URL for shape: ${action.sourceShapeId}`))
+					return
+				}
+				queueHiggsfieldVideo(editor, imageUrl, action.prompt, {
 					onError: (e) => agent.onError(e),
 				})
 			}
