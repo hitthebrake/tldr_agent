@@ -9,12 +9,14 @@ A chat panel on the right side of the screen lets users communicate with the age
 Create a `.dev.vars` file in the root directory and add API keys for any model providers you want to use.
 
 ```
+OPENAI_API_KEY=your_openai_api_key_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
-OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-We recommend using Anthropic for best results. Get your API key from the [Anthropic dashboard](https://console.anthropic.com/settings/keys).
+The default canvas agent model is **OpenAI** (`gpt-5.2-2025-12-11`), so `OPENAI_API_KEY` is enough to run locally. On Cloudflare Workers the Vercel AI SDK does not read `process.env`; keys must be present on the Worker `env` object (via `.dev.vars` or secrets).
+
+For Anthropic models in the UI, add `ANTHROPIC_API_KEY` from the [Anthropic dashboard](https://console.anthropic.com/settings/keys).
 
 ## Local development
 

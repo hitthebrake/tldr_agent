@@ -2,7 +2,12 @@ import { AnthropicProvider, createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI, GoogleGenerativeAIProvider } from '@ai-sdk/google'
 import { createOpenAI, OpenAIProvider } from '@ai-sdk/openai'
 import { LanguageModel, ModelMessage, streamText } from 'ai'
-import { AgentModelName, getAgentModelDefinition, isValidModelName } from '../../shared/models'
+import {
+	AgentModelName,
+	DEFAULT_MODEL_NAME,
+	getAgentModelDefinition,
+	isValidModelName,
+} from '../../shared/models'
 import { DebugPart } from '../../shared/schema/PromptPartDefinitions'
 import { AgentAction } from '../../shared/types/AgentAction'
 import { AgentPrompt } from '../../shared/types/AgentPrompt'
@@ -18,10 +23,54 @@ export class AgentService {
 	anthropic: AnthropicProvider
 	google: GoogleGenerativeAIProvider
 
-	constructor(env: Environment) {
-		this.openai = createOpenAI({ apiKey: env.OPENAI_API_KEY })
-		this.anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY })
-		this.google = createGoogleGenerativeAI({ apiKey: env.GOOGLE_API_KEY })
+	constructor(private readonly env: Environment) {
+		this.openai = createOpenAI({ apiKey: env.OPENAI_API_KEY ?? '' })
+		this.anthropic = createAnthropic({ apiKey: env.ANTHROPIC_API_KEY ?? '' })
+		this.google = createGoogleGenerativeAI({ apiKey: env.GOOGLE_API_KEY ?? '' })
+	}
+
+	private hasKey(value: string | undefined): boolean {
+		return !!value?.trim()
+	}
+
+	/**
+	 * Persisted chat state often still references Claude while only OPENAI_API_KEY is set.
+	 * Use the requested model when its provider key exists; otherwise fall back to any configured provider.
+	 */
+	private coerceModelToAvailableProviders(requested: AgentModelName): AgentModelName {
+		const openai = this.hasKey(this.env.OPENAI_API_KEY)
+		const anthropic = this.hasKey(this.env.ANTHROPIC_API_KEY)
+		const google = this.hasKey(this.env.GOOGLE_API_KEY)
+
+		const { provider } = getAgentModelDefinition(requested)
+		if (provider === 'anthropic' && anthropic) return requested
+		if (provider === 'openai' && openai) return requested
+		if (provider === 'google' && google) return requested
+
+		if (openai) return DEFAULT_MODEL_NAME
+		if (anthropic) return 'claude-sonnet-4-5'
+		if (google) return 'gemini-3-flash-preview'
+
+		return requested
+	}
+
+	private assertProviderApiKey(modelName: AgentModelName) {
+		const { provider } = getAgentModelDefinition(modelName)
+		if (provider === 'anthropic' && !this.hasKey(this.env.ANTHROPIC_API_KEY)) {
+			throw new Error(
+				'ANTHROPIC_API_KEY is not set. Add it to .dev.vars (or Worker secrets when deployed), or switch the agent model to OpenAI or Google in the chat panel.'
+			)
+		}
+		if (provider === 'openai' && !this.hasKey(this.env.OPENAI_API_KEY)) {
+			throw new Error(
+				'OPENAI_API_KEY is not set. Add it to .dev.vars (or Worker secrets when deployed), or switch the agent model.'
+			)
+		}
+		if (provider === 'google' && !this.hasKey(this.env.GOOGLE_API_KEY)) {
+			throw new Error(
+				'GOOGLE_API_KEY is not set. Add it to .dev.vars (or Worker secrets when deployed), or switch the agent model.'
+			)
+		}
 	}
 
 	getModel(modelName: AgentModelName): LanguageModel {
@@ -42,7 +91,14 @@ export class AgentService {
 	}
 
 	private async *streamActions(prompt: AgentPrompt): AsyncGenerator<Streaming<AgentAction>> {
-		const modelName = getModelName(prompt)
+		const requested = getModelName(prompt)
+		const modelName = this.coerceModelToAvailableProviders(requested)
+		if (modelName !== requested) {
+			console.warn(
+				`[AgentService] Model "${requested}" needs a missing API key; streaming with "${modelName}" instead.`
+			)
+		}
+		this.assertProviderApiKey(modelName)
 		const model = this.getModel(modelName)
 
 		if (typeof model === 'string') {

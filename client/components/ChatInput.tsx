@@ -7,6 +7,7 @@ import { AGENT_MODEL_DEFINITIONS, AgentModelName } from '../../shared/models'
 import { useAgent } from '../agent/TldrawAgentAppProvider'
 import { ContextItemTag } from './ContextItemTag'
 import { SelectionTag } from './SelectionTag'
+import { VoiceCall } from './VoiceCall'
 
 export function ChatInput({
 	handleSubmit,
@@ -113,9 +114,12 @@ export function ChatInput({
 							<ChevronDownIcon />
 						</div>
 					</div>
-					<button className="chat-input-submit" disabled={inputValue === '' && !isGenerating}>
-						{isGenerating && inputValue === '' ? '◼' : '⬆'}
-					</button>
+					<span className="chat-actions-right">
+						<VoiceCall />
+						<button className="chat-input-submit" disabled={inputValue === '' && !isGenerating}>
+							{isGenerating && inputValue === '' ? '◼' : '⬆'}
+						</button>
+					</span>
 				</span>
 			</form>
 		</div>

@@ -52,11 +52,34 @@ const overrides: TLUiOverrides = {
 	},
 }
 
+const CHAT_PANEL_OPEN_KEY = 'tldraw-agent-chat-panel-open'
+
 function App() {
 	const [app, setApp] = useState<TldrawAgentApp | null>(null)
+	const [chatPanelOpen, setChatPanelOpen] = useState(() => {
+		try {
+			const stored = localStorage.getItem(CHAT_PANEL_OPEN_KEY)
+			if (stored === null) return true
+			return stored === 'true'
+		} catch {
+			return true
+		}
+	})
 
 	const handleUnmount = useCallback(() => {
 		setApp(null)
+	}, [])
+
+	const toggleChatPanel = useCallback(() => {
+		setChatPanelOpen((open) => {
+			const next = !open
+			try {
+				localStorage.setItem(CHAT_PANEL_OPEN_KEY, String(next))
+			} catch {
+				// ignore
+			}
+			return next
+		})
 	}, [])
 
 	// Custom components to visualize what the agent is doing
@@ -85,7 +108,12 @@ function App() {
 
 	return (
 		<TldrawUiToastsProvider>
-			<div className="tldraw-agent-container">
+			<div
+				className={
+					'tldraw-agent-container' +
+					(chatPanelOpen ? '' : ' tldraw-agent-container--chat-collapsed')
+				}
+			>
 				<div className="tldraw-canvas">
 					<Tldraw
 						persistenceKey="tldraw-agent-demo"
@@ -96,13 +124,27 @@ function App() {
 						<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
 					</Tldraw>
 				</div>
-				<ErrorBoundary fallback={ChatPanelFallback}>
-					{app && (
-						<TldrawAgentAppContextProvider app={app}>
-							<ChatPanel />
-						</TldrawAgentAppContextProvider>
-					)}
-				</ErrorBoundary>
+				<div className="chat-column">
+					<ErrorBoundary fallback={ChatPanelFallback}>
+						{app && (
+							<TldrawAgentAppContextProvider app={app}>
+								<ChatPanel />
+							</TldrawAgentAppContextProvider>
+						)}
+					</ErrorBoundary>
+				</div>
+				{app && (
+					<button
+						type="button"
+						className="chat-panel-slide-toggle"
+						onClick={toggleChatPanel}
+						aria-expanded={chatPanelOpen}
+						aria-label={chatPanelOpen ? 'Hide chat panel' : 'Show chat panel'}
+						title={chatPanelOpen ? 'Hide chat' : 'Show chat'}
+					>
+						{chatPanelOpen ? '›' : '‹'}
+					</button>
+				)}
 			</div>
 		</TldrawUiToastsProvider>
 	)
