@@ -10,7 +10,7 @@ function realtimeVoiceSessionJson() {
 		model: 'gpt-realtime',
 		output_modalities: ['audio'],
 		instructions:
-			'You are a helpful voice assistant for a collaborative whiteboard. Reply in spoken audio. ' +
+			'You are a helpful voice assistant for a collaborative whiteboard. Always reply in English. ' +
 			'Whenever the user wants anything drawn, sketched, added, moved, edited, or changed on the canvas, you MUST call the delegate_prompt tool with a single clear instruction string (the canvas agent cannot hear you). ' +
 			'For pure conversation with no canvas change, answer without the tool.',
 		audio: {

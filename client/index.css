@@ -1192,3 +1192,144 @@ button.prompt-tag span {
 		transform: translateX(350%);
 	}
 }
+
+/* ── Voice suggestion banner ───────────────────────────────────────────────── */
+
+.voice-banner {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.voice-banner:empty {
+	display: none;
+}
+
+.voice-banner__status {
+	min-height: 0;
+	padding: 0 12px;
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.55);
+}
+
+.voice-banner__status:has(*) {
+	padding: 8px 12px;
+}
+
+.voice-banner__listening,
+.voice-banner__processing,
+.voice-banner__error {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.voice-banner__dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #ef4444;
+	flex-shrink: 0;
+	animation: voice-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+	0%, 100% { opacity: 1; }
+	50%       { opacity: 0.3; }
+}
+
+.voice-banner__spinner {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.2);
+	border-top-color: #7c5cff;
+	flex-shrink: 0;
+	animation: voice-spin 0.7s linear infinite;
+}
+
+@keyframes voice-spin {
+	to { transform: rotate(360deg); }
+}
+
+.voice-banner__error {
+	color: #f87171;
+	justify-content: space-between;
+}
+
+.voice-banner__dismiss {
+	background: none;
+	border: none;
+	color: inherit;
+	cursor: pointer;
+	padding: 0 2px;
+	font-size: 10px;
+	opacity: 0.7;
+	flex-shrink: 0;
+}
+
+.voice-banner__dismiss:hover {
+	opacity: 1;
+}
+
+/* Suggestion card */
+.voice-banner__suggestion {
+	padding: 10px 12px;
+	background: rgba(124, 92, 255, 0.1);
+	border-top: 1px solid rgba(124, 92, 255, 0.2);
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.voice-banner__heard,
+.voice-banner__description {
+	margin: 0;
+	font-size: 11px;
+	line-height: 1.45;
+}
+
+.voice-banner__heard {
+	color: rgba(255, 255, 255, 0.5);
+}
+
+.voice-banner__description {
+	color: rgba(255, 255, 255, 0.9);
+}
+
+.voice-banner__actions {
+	display: flex;
+	gap: 6px;
+	margin-top: 2px;
+}
+
+.voice-banner__accept,
+.voice-banner__reject {
+	flex: 1;
+	padding: 5px 0;
+	border: none;
+	border-radius: 5px;
+	font-size: 11px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: opacity 0.15s;
+}
+
+.voice-banner__accept {
+	background: #7c5cff;
+	color: #fff;
+}
+
+.voice-banner__accept:hover {
+	opacity: 0.85;
+}
+
+.voice-banner__reject {
+	background: rgba(255, 255, 255, 0.08);
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.voice-banner__reject:hover {
+	background: rgba(255, 255, 255, 0.14);
+}

@@ -2,51 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useToasts } from 'tldraw'
 import { TldrawAgent } from '../agent/TldrawAgent'
 import { useAgent } from '../agent/TldrawAgentAppProvider'
+import { setVoiceState } from '../voice/voiceStore'
 
 /** Worker proxies SDP to OpenAI (see `worker/routes/realtimeCall.ts`). */
 const REALTIME_CALL_URL = '/api/realtime/call'
 
-function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs: number): Promise<void> {
-	if (pc.iceGatheringState === 'complete') return Promise.resolve()
-	return new Promise((resolve, reject) => {
-		let settled = false
-		const cleanup = () => {
-			clearTimeout(timeout)
-			pc.removeEventListener('icegatheringstatechange', onGatheringState)
-			pc.removeEventListener('icecandidate', onIceCandidate)
-		}
-		const finishOk = () => {
-			if (settled) return
-			settled = true
-			cleanup()
-			resolve()
-		}
-		const onTimeout = () => {
-			if (settled) return
-			settled = true
-			cleanup()
-			const sdp = pc.localDescription?.sdp ?? ''
-			if (pc.iceGatheringState === 'complete' || /\na=candidate:/i.test(sdp)) {
-				resolve()
-				return
-			}
-			reject(
-				new Error(
-					'Voice setup timed out before network candidates were ready (try another network or disable VPN).'
-				)
-			)
-		}
-		const timeout = setTimeout(onTimeout, timeoutMs)
-		const onGatheringState = () => {
-			if (pc.iceGatheringState === 'complete') finishOk()
-		}
-		const onIceCandidate = (ev: RTCPeerConnectionIceEvent) => {
-			if (ev.candidate === null) finishOk()
-		}
-		pc.addEventListener('icegatheringstatechange', onGatheringState)
-		pc.addEventListener('icecandidate', onIceCandidate)
-	})
-}
 
 function waitForDataChannelOpen(dc: RTCDataChannel, timeoutMs: number): Promise<void> {
 	if (dc.readyState === 'open') return Promise.resolve()
@@ -190,6 +150,7 @@ export function VoiceCall() {
 			remoteAudioRef.current.remove()
 			remoteAudioRef.current = null
 		}
+		setVoiceState({ callActive: false })
 		setActive(false)
 		setConnecting(false)
 	}, [])
@@ -197,10 +158,7 @@ export function VoiceCall() {
 	const start = useCallback(async () => {
 		setConnecting(true)
 		try {
-			const pc = new RTCPeerConnection({
-				iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-				iceCandidatePoolSize: 10,
-			})
+			const pc = new RTCPeerConnection()
 			pcRef.current = pc
 
 			const remoteAudio = document.createElement('audio')
@@ -268,10 +226,9 @@ export function VoiceCall() {
 
 			const offer = await pc.createOffer()
 			await pc.setLocalDescription(offer)
-			await waitForIceGatheringComplete(pc, 15_000)
 
 			const localSdp = pc.localDescription?.sdp
-			if (!localSdp?.trim()) throw new Error('Missing local SDP after ICE gathering')
+			if (!localSdp?.trim()) throw new Error('Missing local SDP')
 
 			const sdpRes = await fetch(REALTIME_CALL_URL, {
 				method: 'POST',
@@ -301,6 +258,7 @@ export function VoiceCall() {
 			if (dc.readyState === 'open') {
 				dc.send(JSON.stringify({ type: 'response.create' }))
 			}
+			setVoiceState({ callActive: true })
 			setActive(true)
 		} catch (e) {
 			teardown()

@@ -1,5 +1,6 @@
 import { FormEventHandler, useCallback, useRef } from 'react'
 import { useAgent } from '../agent/TldrawAgentAppProvider'
+import { VoiceSuggestionBanner } from './VoiceSuggestionBanner'
 import { ChatHistory } from './chat-history/ChatHistory'
 import { ChatInput } from './ChatInput'
 import { TodoList } from './TodoList'
@@ -48,6 +49,7 @@ export function ChatPanel() {
 					+
 				</button>
 			</div>
+			<VoiceSuggestionBanner />
 			<ChatHistory agent={agent} />
 			<div className="chat-input-container">
 				<TodoList agent={agent} />

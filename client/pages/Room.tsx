@@ -19,6 +19,7 @@ import {
 } from '../agent/TldrawAgentAppProvider'
 import { AgentSharePanel } from '../components/AgentSharePanel'
 import { ChatPanel } from '../components/ChatPanel'
+import { VoiceController } from '../voice/VoiceController'
 import { HiggsfieldGenerationOverlay } from '../components/HiggsfieldGenerationOverlay'
 import { RoomToolbarContent } from '../components/RoomToolbarContent'
 import { ChatPanelFallback } from '../components/ChatPanelFallback'
@@ -174,6 +175,7 @@ export function Room() {
 							}}
 						>
 							<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
+							{agentActive && <VoiceController />}
 						</Tldraw>
 						<HiggsfieldGenerationOverlay />
 					</div>

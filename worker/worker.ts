@@ -10,6 +10,7 @@ import {
 import { realtimeCall } from './routes/realtimeCall'
 import { session } from './routes/session'
 import { stream } from './routes/stream'
+import { handleVoicePrompt } from './routes/voicePrompt'
 
 // make sure our durable objects are made available to cloudflare
 export { TldrawDurableObject } from './TldrawDurableObject'
@@ -51,6 +52,9 @@ const router = AutoRouter<IRequest, [env: Environment, ctx: ExecutionContext]>({
 	.post('/api/higgsfield/image', (request, env) => handleHiggsfieldImage(request, env))
 	.post('/api/higgsfield/video', (request, env) => handleHiggsfieldVideo(request, env))
 	.post('/api/higgsfield/fetch-media', (request) => handleHiggsfieldFetchMedia(request))
+
+	// Voice prompt — batched transcript → GPT-4o-mini → suggestion description
+	.post('/api/voice-prompt', (request, env) => handleVoicePrompt(request, env))
 
 	.all('*', () => {
 		return new Response('Not found', { status: 404 })
