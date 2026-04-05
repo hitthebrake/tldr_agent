@@ -33,7 +33,8 @@ export class TldrawDurableObject extends DurableObject<Environment> {
 	private voiceClients     = new Map<string, WebSocket>()     // sessionId → ws
 	private voiceTranscripts = new Map<string, string>()        // sessionId → transcript
 	private voiceShapes: ShapeStub[] = []
-	private voiceFlushTimer: ReturnType<typeof setTimeout> | null = null
+	private voiceFlushTimer:  ReturnType<typeof setTimeout> | null = null
+	private voiceSafetyTimer: ReturnType<typeof setInterval> | null = null
 	private voiceProcessing = false
 
 	constructor(ctx: DurableObjectState, env: Environment) {
@@ -104,15 +105,20 @@ export class TldrawDurableObject extends DurableObject<Environment> {
 				this.voiceTranscripts.set(sessionId, existing ? existing + ' ' + transcript : transcript)
 				if (msg.shapes?.length) this.voiceShapes = msg.shapes
 			}
-			// Debounce: flush 3s after the last transcript arrives from ANY user.
-			// This means as long as anyone is still speaking, we keep waiting.
+			// Silence debounce: flush 5s after the last word from anyone.
 			if (this.voiceFlushTimer) clearTimeout(this.voiceFlushTimer)
 			this.voiceFlushTimer = setTimeout(() => {
 				this.voiceFlushTimer = null
 				void this.flushVoice()
-			}, 3_000)
+			}, 5_000)
+
+			// Start 20s safety interval on first transcript if not already running.
+			if (!this.voiceSafetyTimer) {
+				this.voiceSafetyTimer = setInterval(() => { void this.flushVoice() }, 20_000)
+			}
 		} else if (msg.type === 'voice:clear') {
 			if (this.voiceFlushTimer) { clearTimeout(this.voiceFlushTimer); this.voiceFlushTimer = null }
+			if (this.voiceSafetyTimer) { clearInterval(this.voiceSafetyTimer); this.voiceSafetyTimer = null }
 			this.voiceTranscripts.clear()
 			this.voiceShapes = []
 			this.broadcastVoice({ type: 'voice:clear' })
@@ -123,6 +129,11 @@ export class TldrawDurableObject extends DurableObject<Environment> {
 		if (this.voiceProcessing) return
 		const entries = [...this.voiceTranscripts.entries()]
 		if (entries.length === 0) return
+
+		// Cancel silence debounce (may have been triggered by safety interval)
+		if (this.voiceFlushTimer) { clearTimeout(this.voiceFlushTimer); this.voiceFlushTimer = null }
+		// Stop safety interval — will restart on next incoming transcript
+		if (this.voiceSafetyTimer) { clearInterval(this.voiceSafetyTimer); this.voiceSafetyTimer = null }
 
 		this.voiceProcessing = true
 		this.voiceTranscripts.clear()

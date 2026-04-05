@@ -3,17 +3,12 @@ import { useEditor } from 'tldraw'
 import { getVoiceState, resetVoiceState, setVoiceState, subscribeVoiceState } from './voiceStore'
 import { VoiceCollabClient } from './VoiceCollabClient'
 
-const SILENCE_FLUSH_MS = 3_000  // flush after 3s of no new words
-const SAFETY_FLUSH_MS  = 20_000 // flush even if speech is continuous
-
 /** Rendered inside the Tldraw context. Manages microphone + collab voice flush. No visual output. */
 export function VoiceController({ roomId }: { roomId: string }) {
 	const editor = useEditor()
-	const transcriptRef   = useRef('')
-	const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-	const safetyTimerRef  = useRef<ReturnType<typeof setInterval> | null>(null)
-	const recognitionRef  = useRef<any>(null)
-	const collabRef       = useRef<VoiceCollabClient | null>(null)
+	const transcriptRef  = useRef('')
+	const recognitionRef = useRef<any>(null)
+	const collabRef      = useRef<VoiceCollabClient | null>(null)
 
 	useEffect(() => {
 		const SpeechRec =
@@ -47,36 +42,6 @@ export function VoiceController({ roomId }: { roomId: string }) {
 			}
 		})
 
-		// ── Flush helper ─────────────────────────────────────────────────────
-		function flush() {
-			if (getVoiceState().callActive) return
-			const transcript = transcriptRef.current.trim()
-			if (!transcript) return
-
-			if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
-
-			const shapes = editor
-				.getCurrentPageShapes()
-				.slice(0, 60)
-				.map((shape) => {
-					const b = editor.getShapePageBounds(shape)
-					return {
-						type: shape.type,
-						id: shape.id,
-						x: Math.round(b?.x ?? 0),
-						y: Math.round(b?.y ?? 0),
-						w: Math.round(b?.w ?? 0),
-						h: Math.round(b?.h ?? 0),
-					}
-				})
-
-			// Send to server — server aggregates all users and calls OpenAI
-			collab.sendTranscript(transcript, shapes)
-
-			transcriptRef.current = ''
-			setVoiceState({ transcript: '' })
-		}
-
 		// ── Speech recognition ──────────────────────────────────────────────
 		const recognition = new SpeechRec()
 		recognition.continuous = true
@@ -87,14 +52,29 @@ export function VoiceController({ roomId }: { roomId: string }) {
 			if (getVoiceState().callActive) return
 			for (let i = event.resultIndex; i < event.results.length; i++) {
 				if (event.results[i].isFinal) {
-					transcriptRef.current += event.results[i][0].transcript + ' '
+					const chunk = event.results[i][0].transcript.trim()
+					if (!chunk) continue
+
+					transcriptRef.current += chunk + ' '
 					setVoiceState({ transcript: transcriptRef.current.trim() })
 
-					if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-					silenceTimerRef.current = setTimeout(() => {
-						silenceTimerRef.current = null
-						flush()
-					}, SILENCE_FLUSH_MS)
+					// Send this chunk immediately so the server can accumulate
+					// from all users in real time — don't wait for local silence.
+					const shapes = editor
+						.getCurrentPageShapes()
+						.slice(0, 60)
+						.map((shape) => {
+							const b = editor.getShapePageBounds(shape)
+							return {
+								type: shape.type,
+								id: shape.id,
+								x: Math.round(b?.x ?? 0),
+								y: Math.round(b?.y ?? 0),
+								w: Math.round(b?.w ?? 0),
+								h: Math.round(b?.h ?? 0),
+							}
+						})
+					collab.sendTranscript(chunk, shapes)
 				}
 			}
 		}
@@ -128,7 +108,6 @@ export function VoiceController({ roomId }: { roomId: string }) {
 			if (!prevCallActive && callActive) {
 				intentionalStop = true
 				transcriptRef.current = ''
-				if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
 				try { recognition.stop() } catch {}
 				setTimeout(() => { setVoiceState({ transcript: '', listening: false }) }, 0)
 			} else if (prevCallActive && !callActive) {
@@ -142,9 +121,6 @@ export function VoiceController({ roomId }: { roomId: string }) {
 			prevCallActive = callActive
 		})
 
-		// ── Safety flush ─────────────────────────────────────────────────────
-		safetyTimerRef.current = setInterval(() => flush(), SAFETY_FLUSH_MS)
-
 		return () => {
 			unsubCall()
 			unsubCollab()
@@ -154,8 +130,6 @@ export function VoiceController({ roomId }: { roomId: string }) {
 			recognition.onend = null
 			recognition.stop()
 			recognitionRef.current = null
-			if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null }
-			if (safetyTimerRef.current) { clearInterval(safetyTimerRef.current); safetyTimerRef.current = null }
 			resetVoiceState()
 		}
 	}, [editor, roomId])
