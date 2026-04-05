@@ -175,7 +175,7 @@ export function Room() {
 							}}
 						>
 							<TldrawAgentAppProvider onMount={setApp} onUnmount={handleUnmount} />
-							{agentActive && <VoiceController />}
+							{agentActive && roomId && <VoiceController roomId={roomId} />}
 						</Tldraw>
 						<HiggsfieldGenerationOverlay />
 					</div>

@@ -1,6 +1,9 @@
 export type VoiceSuggestion = {
 	description: string
+	/** The local user's transcript that was sent */
 	transcript: string
+	/** Combined transcript from all users (shown when > 1 contributor) */
+	combinedTranscript?: string
 }
 
 export type VoiceState = {
