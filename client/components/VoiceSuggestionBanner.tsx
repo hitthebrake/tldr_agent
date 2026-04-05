@@ -12,10 +12,12 @@ export function VoiceSuggestionBanner() {
 
 	const handleAccept = () => {
 		if (!suggestion) return
+		// Use the combined transcript when available (multi-user), otherwise own transcript
+		const prompt = suggestion.combinedTranscript ?? suggestion.transcript
 		agent.interrupt({
 			input: {
-				agentMessages: [suggestion.transcript],
-				userMessages: [suggestion.transcript],
+				agentMessages: [prompt],
+				userMessages: [prompt],
 				source: 'user',
 			},
 		})
@@ -57,7 +59,11 @@ export function VoiceSuggestionBanner() {
 			{/* Suggestion card */}
 			{suggestion && (
 				<div className="voice-banner__suggestion">
-					<p className="voice-banner__heard">You said: <em>"{suggestion.transcript}"</em></p>
+					{suggestion.combinedTranscript && suggestion.combinedTranscript !== suggestion.transcript ? (
+						<p className="voice-banner__heard"><em>{suggestion.combinedTranscript}</em></p>
+					) : (
+						<p className="voice-banner__heard">You said: <em>"{suggestion.transcript}"</em></p>
+					)}
 					<p className="voice-banner__description">{suggestion.description}</p>
 					<div className="voice-banner__actions">
 						<button className="voice-banner__accept" onClick={handleAccept}>

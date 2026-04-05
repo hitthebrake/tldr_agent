@@ -31,6 +31,13 @@ const router = AutoRouter<IRequest, [env: Environment, ctx: ExecutionContext]>({
 		return room.fetch(request.url, { headers: request.headers, body: request.body })
 	})
 
+	// voice collab WebSocket — same DO instance as the room, shares in-process voice state
+	.get('/api/voice-collab/:roomId', (request, env) => {
+		const id = env.TLDRAW_DURABLE_OBJECT.idFromName(request.params.roomId)
+		const room = env.TLDRAW_DURABLE_OBJECT.get(id)
+		return room.fetch(request.url, { headers: request.headers, body: request.body })
+	})
+
 	// assets can be uploaded to the bucket under /uploads:
 	.post('/api/uploads/:uploadId', handleAssetUpload)
 
