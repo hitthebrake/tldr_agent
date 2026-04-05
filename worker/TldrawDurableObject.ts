@@ -98,10 +98,14 @@ export class TldrawDurableObject extends DurableObject<Environment> {
 		if (msg.type === 'voice:transcript') {
 			const transcript = (msg.transcript ?? '').trim()
 			if (transcript) {
-				this.voiceTranscripts.set(sessionId, transcript)
+				// Append to existing buffer so chunks from the same user accumulate,
+				// and chunks arriving before the debounce fires aren't lost.
+				const existing = this.voiceTranscripts.get(sessionId) ?? ''
+				this.voiceTranscripts.set(sessionId, existing ? existing + ' ' + transcript : transcript)
 				if (msg.shapes?.length) this.voiceShapes = msg.shapes
 			}
-			// Debounce: flush 3s after the last transcript arrives from any user
+			// Debounce: flush 3s after the last transcript arrives from ANY user.
+			// This means as long as anyone is still speaking, we keep waiting.
 			if (this.voiceFlushTimer) clearTimeout(this.voiceFlushTimer)
 			this.voiceFlushTimer = setTimeout(() => {
 				this.voiceFlushTimer = null
